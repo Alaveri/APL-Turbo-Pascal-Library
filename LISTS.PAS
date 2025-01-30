@@ -23,7 +23,7 @@ type
   PObjectStack = ^TObjectStack;
   PQueue = ^TQueue;
   PStringList = ^TStringList;
-  PLongIntList = ^TLongIntList;
+  PLongIntList = ^TIntegerList;
   PSortFunc = ^TSortFunc;
   PComparer = ^TComparer;
   PListBuffer = ^TListBuffer;
@@ -32,6 +32,7 @@ type
   PIdentifiableListProc = ^TIdentifiableListProc;
   PObjectListProc = ^TObjectListProc;
   PStringListProc = ^TStringListProc;
+  PIntegerList = ^TIntegerList;
 
   TSortFunc = procedure(AList: PList; AComparer: TComparer);
   TListBuffer = array[0..ListBufferSize] of pointer;
@@ -40,6 +41,7 @@ type
   TStringListProc = procedure(AItem: PChar);
   TIdentifiableListProc = procedure(AItem: PIdentifiable);
   TListGrowFunc = function(AMin: integer): integer;
+  TStringCaseOption = (soCaseSensitive, soCaseInsensitive);
 
   TList = object(TStatusObject)
   private
@@ -175,7 +177,7 @@ type
     procedure Insert(AIndex: integer; AItem: PIdentifiable);
   end;
 
-  TLongIntList = object(TList)
+  TIntegerList = object(TList)
   private
   public
     function Add(AItem: longint): integer;
@@ -185,7 +187,6 @@ type
     procedure Insert(AIndex: integer; AItem: longint);
     procedure RemoveItem(AItem: longint);
   end;
-
 
   TStringComparer = object(TObject)
   private
@@ -221,6 +222,11 @@ begin
   CaseInsensitiveStringCompare := StrIComp(str1, str2);
 end;
 
+function IntPtrCompare(AItem1, AItem2: pointer): integer; far;
+begin
+  IntPtrCompare := longint(AItem1) - longint(AItem2);
+end;
+
 function TStringComparer.CaseSensitive: PComparer;
 begin
   CaseSensitive := @StringCompare;
@@ -246,7 +252,8 @@ begin
   newCapacity := 0;
   while newCapacity < AMin do begin
     if newCapacity > 64 then
-      newCapacity := (newCapacity * 3) div 2
+      {newCapacity := (newCapacity * 3) shr 1}
+      newCapacity := newCapacity shl 1
     else if newCapacity > 8 then
       Inc(newCapacity, 16)
     else
@@ -1069,32 +1076,32 @@ begin
   inherited Insert(AIndex, AItem);
 end;
 
-function TLongIntList.Add(AItem: longint): integer;
+function TIntegerList.Add(AItem: longint): integer;
 begin
   Add := AddPtr(pointer(AItem));
 end;
 
-function TLongIntList.GetItem(AIndex: integer): longint;
+function TIntegerList.GetItem(AIndex: integer): longint;
 begin
   GetItem := longint(inherited GetItem(AIndex));
 end;
 
-function TLongIntList.IndexOf(AItem: longint): integer;
+function TIntegerList.IndexOf(AItem: longint): integer;
 begin
   IndexOf := inherited IndexOfPtr(pointer(AItem));
 end;
 
-procedure TLongIntList.SetItem(AIndex: integer; AItem: longint);
+procedure TIntegerList.SetItem(AIndex: integer; AItem: longint);
 begin
   inherited SetItem(AIndex, pointer(AItem));
 end;
 
-procedure TLongIntList.Insert(AIndex: integer; AItem: longint);
+procedure TIntegerList.Insert(AIndex: integer; AItem: longint);
 begin
   inherited Insert(AIndex, pointer(AItem));
 end;
 
-procedure TLongIntList.RemoveItem(AItem: longint);
+procedure TIntegerList.RemoveItem(AItem: longint);
 begin
   inherited DeletePtr(pointer(AItem));
 end;

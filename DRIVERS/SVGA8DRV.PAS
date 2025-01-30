@@ -84,10 +84,12 @@ type
     procedure HLinePattern(APattern: TLinePattern; APX, APY, AWidth: integer); virtual;
     procedure VLinePattern(APattern: word; APX, APY, AHeight: integer); virtual;
     procedure InverseHLine(APX, APY, AWidth: integer); virtual;
-    procedure DrawImage(APX, APY, AWidth, AHeight: integer; AImage: PByte); virtual;
-    procedure DrawImageT(APX, APY, AWidth, AHeight: integer; AImage: PByte); virtual;
-    procedure DrawImageStream(APX, APY, AWidth, AHeight: integer; AStream: PStream); virtual;
-    procedure DrawImageStreamT(APX, APY, AWidth, AHeight: integer; AStream: PStream); virtual;
+    procedure DrawImageCoords(APX, APY, AWidth, AHeight: integer;
+      var AImage; AFlags: TImageFlags); virtual;
+    procedure DrawImageZoom(const ARect: TRect; var AImage; AFlags: TImageFlags;
+      AZoom: integer); virtual;
+    procedure DrawBufferRect(const ASourceBounds, ASourceRect: TRect;
+      const ADestPoint: TPoint; var ABuffer); virtual;
     procedure CopyToOffScreen(const ASource, ADest: TRect); virtual;
     procedure CopyFromOffScreen(const ASource, ADest: TRect); virtual;
     procedure SetDisplayPage(APage: word); virtual;
@@ -101,6 +103,19 @@ implementation
 
 uses
   MouseDrv;
+
+type
+  TLineInfo = record
+    Image: pointer;
+    YIndex: integer;
+    Start: longint;
+    DrawRect: TRect;
+    ImageRect: TRect;
+    Screen: PByte;
+    Offset: longint;
+    Driver: PSvga8Driver;
+  end;
+  TDrawLineProc = procedure(const ALineInfo: TLineInfo);
 
 procedure TSVga8Mode.Init;
 begin
@@ -766,154 +781,190 @@ begin
   end;
 end;
 
-procedure TSVga8Driver.DrawImage(APX, APY, AWidth, AHeight: integer; AImage: PByte);
+procedure DrawLineBuffer(const ALineInfo: TLineInfo);
+var
+  screenPtr, imagePtr: PByte;
+  lineWidth, partialWidth: integer;
+begin
+  with ALineInfo, Driver^ do begin
+    imagePtr := PByte(Image);
+    screenPtr := Screen;
+    Inc(imagePtr, (YIndex + ImageRect.Y) * ImageRect.Width + ImageRect.X);
+    lineWidth := DrawRect.Width;
+    if Offset + lineWidth > FMaxOffset then begin
+      partialWidth := FMaxOffset - Offset + 1;
+      Move(imagePtr^, screenPtr^, partialWidth);
+      Inc(imagePtr, partialWidth);
+      SetBank(SvgaState^.FCurrentBank + 1);
+      screenPtr := Mode^.FrameBuffer;
+      Move(imagePtr^, screenPtr^, lineWidth - partialWidth);
+    end
+    else
+      Move(imagePtr^, screenPtr^, lineWidth);
+  end;
+end;
+
+procedure DrawLineStream(const ALineInfo: TLineInfo);
+var
+  offset: longint;
+  screenPtr, imagePtr: PByte;
+  lineWidth, partialWidth: integer;
+  stream: PStream;
+  sy, yIndex: integer;
+begin
+  with ALineInfo, Driver^ do begin
+    imagePtr := PByte(Image);
+    screenPtr := Screen;
+    stream^.Seek(Start + (YIndex + ImageRect.Y) * longint(ImageRect.Width) +
+      ImageRect.X, soFromBeginning);
+    lineWidth := DrawRect.Width;
+    if Offset + lineWidth > FMaxOffset then begin
+      partialWidth := FMaxOffset - Offset + 1;
+      stream^.Read(screenPtr, partialWidth);
+      SetBank(SvgaState^.FCurrentBank + 1);
+      screenPtr := Mode^.FrameBuffer;
+      stream^.Read(screenPtr, lineWidth - partialWidth);
+    end
+    else
+      stream^.Read(screenPtr, lineWidth);
+    Driver^.CheckReRaise(stream);
+  end;
+end;
+
+procedure DrawTransparentLineBuffer(const ALineInfo: TLineInfo);
+var
+  screenOffset: longint;
+  screenPtr, imagePtr: PByte;
+  xIndex, lineWidth, sy: integer;
+begin
+  with ALineInfo, Driver^ do begin
+    imagePtr := PByte(Image);
+    screenPtr := Screen;
+    screenOffset := Offset;
+    Inc(imagePtr, (YIndex + ImageRect.Y) * ImageRect.Width + ImageRect.X);
+    lineWidth := DrawRect.Width;
+    for xIndex := 0 to DrawRect.Width - 1 do begin
+      if imagePtr^ <> TransparentColor then
+        screenPtr^ := imagePtr^;
+      Inc(imagePtr);
+      Inc(screenPtr);
+      Inc(screenOffset);
+      if screenOffset > FMaxOffset then
+        screenPtr := InternalGetScreenPointer(DrawRect.X + xIndex + 1,
+          YIndex + DrawRect.Y, true, screenOffset);
+    end;
+  end;
+end;
+procedure DrawTransparentLineStream(const ALineInfo: TLineInfo);
+var
+  screenOffset: longint;
+  sy: integer;
+  imageStream: PStream;
+  xIndex: integer;
+  screenPtr: PByte;
+  color: byte;
+begin
+  with ALineInfo, Driver^ do begin
+    imageStream := PStream(Image);
+    screenPtr := Screen;
+    screenOffset := Offset;
+    imageStream^.Seek(Start + (YIndex + ImageRect.Y) * longint(ImageRect.Width) +
+      ImageRect.X, soFromBeginning);
+    imageStream^.Read(@LineBuffer, ImageRect.Width);
+    for xIndex := 0 to ImageRect.Width - 1 do begin
+      color := LineBuffer[xIndex];
+      if color <> TransparentColor then
+        screen^ := color;
+      Inc(screenPtr);
+      Inc(screenOffset);
+      if screenOffset > FMaxOffset then
+        screenPtr := InternalGetScreenPointer(drawRect.X + xIndex + 1,
+          sy, true, screenOffset);
+    end;
+    Driver^.CheckReRaise(imageStream);
+  end;
+end;
+
+procedure TSVga8Driver.DrawImageZoom(const ARect: TRect; var AImage; AFlags: TImageFlags;
+  AZoom: integer);
 var
   imageRect, drawRect: TRect;
   yIndex: longint;
-  screen, image: PByte;
-  sy: longint;
-  lineWidth, partialWidth: integer;
+  drawLine: TDrawLineProc;
   offset: longint;
+  sy: integer;
+  info: TLineInfo;
 begin
-  if HasException then
-    exit;
-  GetImageDrawRects(APX, APY, AWidth, AHeight, imageRect, drawRect);
-  if drawRect.IsEmpty then
-    exit;
-  sy := drawRect.Y;
-  lineWidth := drawRect.Width;
-  for yIndex := 0 to drawRect.Height - 1 do begin
-    screen := InternalGetScreenPointer(drawRect.X, sy, true, offset);
-    image := AImage;
-    Inc(image, (yIndex + imageRect.Y) * AWidth + imageRect.X);
-    if offset + lineWidth > FMaxOffset then begin
-      partialWidth := FMaxOffset - offset + 1;
-      Move(image^, screen^, partialWidth);
-      Inc(image, partialWidth);
-      SetBank(SvgaState^.FCurrentBank + 1);
-      screen := Mode^.FrameBuffer;
-      Move(image^, screen^, lineWidth - partialWidth);
-      Inc(image, lineWidth - partialWidth);
-    end
-    else begin
-      Move(image^, screen^, lineWidth);
-      Inc(image, lineWidth);
-    end;
-    Inc(sy);
-  end;
 end;
 
-procedure TSVga8Driver.DrawImageT(APX, APY, AWidth, AHeight: integer; AImage: PByte);
+procedure TSVga8Driver.DrawBufferRect(const ASourceBounds, ASourceRect: TRect;
+  const ADestPoint: TPoint; var ABuffer); virtual;
 var
-  imageRect, drawRect: TRect;
-  xIndex, yIndex: integer;
-  sy: word;
-  screen, image: PByte;
-  offset: longint;
-begin
-  if HasException then
-    exit;
-  GetImageDrawRects(APX, APY, AWidth, AHeight, imageRect, drawRect);
-  if drawRect.IsEmpty then
-    exit;
-  sy := drawRect.Y;
-  for yIndex := 0 to drawRect.Height - 1 do begin
-    screen := InternalGetScreenPointer(drawRect.X, sy, true, offset);
-    image := AImage;
-    Inc(image, (yIndex + imageRect.Y) * imageRect.Width + imageRect.X);
-    for xIndex := 0 to drawRect.Width - 1 do begin
-      if image^ <> TransparentColor then
-        screen^ := image^;
-      Inc(image);
-      Inc(screen);
-      Inc(offset);
-      if offset > FMaxOffset then
-        screen := InternalGetScreenPointer(drawRect.X + xIndex + 1, sy, true, offset);
-    end;
-    Inc(sy);
-  end;
-end;
-
-procedure TSVga8Driver.DrawImageStream(APX, APY, AWidth, AHeight: integer; AStream: PStream);
-var
-  imageRect, drawRect: TRect;
+  image: PByte;
+  screenPtr, imagePtr: PByte;
+  source, dest: TRect;
   yIndex: integer;
-  screen: PByte;
-  sy: word;
-  lineWidth, partialWidth: integer;
-  offset, streamStart: longint;
+  offset: longint;
 begin
-  if AStream^.HasException or HasException then
+  image := PByte(ABuffer);
+  dest.CreateRect(ASourceRect);
+  dest.X := ADest.X;
+  dest.Y := ADest.Y;
+  dest.Intersect(Mode^.Bounds);
+  dest.Intersect(State^.ViewPort);
+  source.Create(ASourceRect);
+  source.Intersect(ASourceBounds);
+  if dest.IsEmpty then
+    exit;
+  imagePtr := image;
+  Inc(imagePtr, source.Y * ASourceBounds.Width + source.X);
+  for yIndex := 0 to dest.Height - 1 do begin
+    screenPtr := InternalGetScreenPointer(dest.X, dest.Y + yIndex, true, offset);
+    Move(imagePtr^, screenPtr^, dest.Width);
+    Inc(imagePtr, ASourceBounds.Width);
+  end;
+end;
+
+procedure TSVga8Driver.DrawImageCoords(APX, APY, AWidth, AHeight: integer;
+  var AImage; AFlags: TImageFlags);
+var
+  imageRect, drawRect: TRect;
+  yIndex: longint;
+  drawLine: TDrawLineProc;
+  offset: longint;
+  sy: integer;
+  info: TLineInfo;
+begin
+  if HasException then
     exit;
   GetImageDrawRects(APX, APY, AWidth, AHeight, imageRect, drawRect);
-  if drawRect.IsEmpty then
+  if drawRect.IsEmpty or imageRect.IsEmpty then
     exit;
   sy := drawRect.Y;
-  lineWidth := drawRect.Width;
-  streamStart := AStream^.Position;
+  if AFlags * [ifStreamed, ifTransparent] = [ifStreamed, ifTransparent] then
+    drawLine := DrawTransparentLineStream
+  else if AFlags * [ifStreamed, ifTransparent] = [ifStreamed] then
+    drawLine := DrawLineStream
+  else if AFlags * [ifTransparent] = [ifTransparent] then
+    drawLine := DrawTransparentLineBuffer
+  else
+    drawLine := DrawLineBuffer;
+  sy := drawRect.Y;
+  info.Image := pointer(AImage);
+  info.DrawRect.CreateRect(drawRect);
+  info.ImageRect.CreateRect(imageRect);
+  info.Start := 0;
+  info.Driver := @self;
+  if AFlags * [ifStreamed] = [ifStreamed] then
+    info.Start := PStream(AImage)^.Position;
   for yIndex := 0 to drawRect.Height - 1 do begin
-    screen := InternalGetScreenPointer(drawRect.X, sy, true, offset);
-    AStream^.Seek(streamStart + (yIndex + imageRect.Y) * longint(imageRect.Width) + imageRect.X, soFromBeginning);
-    if offset + lineWidth > FMaxOffset then begin
-      partialWidth := FMaxOffset - offset + 1;
-      AStream^.Read(screen, partialWidth);
-      SetBank(SvgaState^.FCurrentBank + 1);
-      screen := Mode^.FrameBuffer;
-      AStream^.Read(screen, lineWidth - partialWidth);
-    end
-    else
-      AStream^.Read(screen, lineWidth);
-    Inc(sy);
-    if AStream^.HasException then
+    info.Screen := InternalGetScreenPointer(DrawRect.X, sy + yIndex, true,
+      info.Offset);
+    info.YIndex := yIndex;
+    drawLine(info);
+    if HasException then
       break;
   end;
-  if AStream^.HasException then
-    Raise(AStream^.Exception^.Code);
-end;
-
-procedure TSVga8Driver.DrawImageStreamT(APX, APY, AWidth, AHeight: integer; AStream: PStream);
-var
-  imageRect, drawRect: TRect;
-  xIndex, yIndex: integer;
-  screen: PByte;
-  imageLine, linePtr: PByte;
-  streamStart, offset: longint;
-  sy: integer;
-  lineWidth: integer;
-begin
-  if AStream^.HasException or HasException then
-    exit;
-  GetImageDrawRects(APX, APY, AWidth, AHeight, imageRect, drawRect);
-  if drawRect.IsEmpty then
-    exit;
-  lineWidth := drawRect.Width;
-  GetMem(imageLine, lineWidth);
-  if not Assigned(imageLine) then begin
-    Raise(ecNotEnoughMemory);
-    exit;
-  end;
-  streamStart := AStream^.Position;
-  sy := drawRect.Y;
-  AStream^.Seek(streamStart + (yIndex + imageRect.Y) * AWidth + imageRect.X, soFromPosition);
-  for yIndex := 0 to drawRect.Height - 1 do begin
-    screen := InternalGetScreenPointer(drawRect.X, drawRect.Y + yIndex, true, offset);
-    AStream^.Seek(yIndex * imageRect.Width + imageRect.X, soFromBeginning);
-    AStream^.Read(imageLine, lineWidth);
-    linePtr := imageLine;
-    for xIndex := 0 to lineWidth - 1 do begin
-      if linePtr^ <> TransparentColor then
-        screen^ := linePtr^;
-      Inc(screen);
-      Inc(offset);
-      Inc(linePtr);
-      if offset > FMaxOffset then
-        screen := InternalGetScreenPointer(drawRect.X + xIndex + 1, sy, true, offset);
-    end;
-    Inc(sy);
-  end;
-  if AStream^.HasException then
-    Raise(AStream^.Exception^.Code);
-  FreeMem(imageLine, lineWidth);
 end;
 
 procedure TSVga8Driver.SetDisplayPage(APage: word);

@@ -61,6 +61,10 @@ function IsAlphaNumeric(AString: PChar): boolean;
 function IsAlphaNumericString(const AString: string): boolean;
 function IsNumericString(const AString: string): boolean;
 function IsNumeric(AString: PChar): boolean;
+function CharUpCase(AChar: char): char;
+function CharLowCase(AChar: char): char;
+function StringCompare(const AString1, AString2: string): integer;
+function StringCompareInsensitive(const AString1, AString2: string): integer;
 procedure Swap(var ANum1: integer; var ANum2: integer);
 procedure SwapShort(var ANum1: shortint; var ANum2: shortint);
 procedure SwapByte(var ANum1: byte; var ANum2: byte);
@@ -70,9 +74,6 @@ procedure SwapPointer(var APointer1: pointer; var APointer2: pointer);
 procedure FillCharLarge(var APtr; ACount: longint; AValue: byte);
 procedure Delete(var AString: string; AStart, ACount: integer);
 procedure DeletePChar(var AString: PChar; AStart, ACount: integer);
-
-var
-  WhiteSpaceChars: set of char;
 
 implementation
 
@@ -233,7 +234,7 @@ var
 begin
   result := AString;
   for index := 1 to Length(AString) do
-    result[index] := LowCase(result[index]);
+    result[index] := CharLowCase(result[index]);
   LowerCase := result;
 end;
 
@@ -244,7 +245,7 @@ var
 begin
   result := AString;
   for index := 1 to Length(AString) do
-    result[index] := UpCase(result[index]);
+    result[index] := CharUpCase(result[index]);
   UpperCase := result;
 end;
 
@@ -254,7 +255,7 @@ var
 begin
   result := LowerCase(AString);
   if Length(result) > 1 then
-    result[1] := UpCase(result[1]);
+    result[1] := CharUpCase(result[1]);
   FirstUpper := result;
 end;
 
@@ -749,6 +750,83 @@ begin
   IsNumericString := IsCharType(@AString[1], Length(AString), Numeric);
 end;
 
+function CharUpCase(AChar: char): char;
+begin
+  if not (AChar in AlphaInternat) then begin
+    CharUpCase := AChar;
+    exit;
+  end;
+  if AChar in LowerChars then begin
+    AChar := Chr(Ord(AChar) - 32);
+  end
+  else begin
+    case AChar of
+      #129: AChar := #154;
+      #130: AChar := #144;
+      #132: AChar := #142;
+      #134: AChar := #143;
+      #135: AChar := #128;
+      #145: AChar := #146;
+      #148: AChar := #153;
+      #164: AChar := #165;
+    end;
+  end;
+  CharUpCase := AChar;
+end;
+
+function CharLowCase(AChar: char): char;
+begin
+  if not (AChar in AlphaInternat) then begin
+    CharLowCase := AChar;
+    exit;
+  end;
+  if AChar in UpperChars then begin
+    AChar := Chr(Ord(AChar) + 32);
+  end
+  else begin
+    case AChar of
+      #154: AChar := #129;
+      #144: AChar := #130;
+      #142: AChar := #132;
+      #143: AChar := #134;
+      #128: AChar := #135;
+      #146: AChar := #145;
+      #153: AChar := #148;
+      #165: AChar := #164;
+    end;
+  end;
+  CharLowCase := AChar;
+end;
+
+function StringCompare(const AString1, AString2: string): integer;
+var
+  index: integer;
+begin
+  index := 1;
+  while (index <= Length(AString1)) and (index <= Length(AString2)) do begin
+    if AString1[index] < AString2[index] then begin
+      StringCompare := -1;
+      exit;
+    end;
+    if AString1[index] > AString2[index] then begin
+      StringCompare := 1;
+      exit;
+    end;
+    Inc(index);
+  end;
+  if Length(AString1) < Length(AString2) then
+    StringCompare := -1
+  else if Length(AString1) > Length(AString2) then
+    StringCompare := 1
+  else
+    StringCompare := 0;
+end;
+
+function StringCompareInsensitive(const AString1, AString2: string): integer;
+begin
+  StringCompareInsensitive := StringCompare(UpperCase(AString1), UpperCase(AString2));
+end;
+
 procedure Finalize; far;
 begin
   ExitProc := PreviousExitProc;
@@ -756,7 +834,6 @@ begin
 end;
 
 begin
- WhiteSpaceChars := [#32, #13, #10, #9];
  NumberSeparator := ',';
  LastDir := GetCurrentDirectory;
  PreviousExitProc := ExitProc;

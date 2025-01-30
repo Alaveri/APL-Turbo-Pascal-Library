@@ -64,6 +64,7 @@ type
     function ReadDouble: double; virtual;
     function ReadBool: boolean; virtual;
     function ReadReal: real; virtual;
+    function ReadChar: char; virtual;
     function Write(ABuffer: pointer; ACount: longint): longint; virtual;
     function Seek(AOffset: longint; AOrigin: TSeekOrigin): longint; virtual;
     function WriteToStream(AStream: PStream; ACount: longint): longint; virtual;
@@ -108,6 +109,7 @@ type
     function CanRead: boolean; virtual;
     function CanWrite: boolean; virtual;
     function CanSeek: boolean; virtual;
+    function BufferPointer: pointer;
     function Fill(ACount: longint; AByte: byte): longint; virtual;
     function FillWord(ACount: longint; AWord: word): longint; virtual;
     function FillLong(ACount: longint; ALong: longint): longint; virtual;
@@ -308,6 +310,15 @@ begin
   aNum := 0;
   Read(@aNum, SizeOf(real));
   ReadReal := aNum;
+end;
+
+function TStream.ReadChar: char;
+var
+  aChar: char;
+begin
+  aChar := #0;
+  Read(@aChar, SizeOf(char));
+  ReadChar := aChar;
 end;
 
 function TStream.ReadBool: boolean;
@@ -523,6 +534,11 @@ begin
   Position := 0;
 end;
 
+function TMemoryStream.BufferPointer: pointer;
+begin
+  BufferPointer := Memory.ReferencePointer(FReferences^.First);
+end;
+
 destructor TMemoryStream.Free;
 begin
   DeallocateReferences;
@@ -647,7 +663,7 @@ var
   reference: PReference;
   offset: longint;
   writeSize: word;
-  aptr: PLong;
+  aptr: PLongint;
   count: word;
 begin
   if HasException then
@@ -898,7 +914,7 @@ begin
     {$I-}
     if Eof(FFile) then
       break;
-    BlockRead(FFile, buffer^, MinL(ACount, MaxVarSize), bytesRead);
+    BlockRead(FFile, buffer^, MinL(ACount - total, BufferSize), bytesRead);
     {$I+}
     if IOResult <> 0 then begin
       Raise(ecStreamReadError);
@@ -927,7 +943,7 @@ begin
   while total < ACount do begin
     Seek(Position, soFromBeginning);
     {$I-}
-    BlockWrite(FFile, buffer^, MinL(ACount, MaxVarSize), bytesWritten);
+    BlockWrite(FFile, buffer^, MinL(ACount - total, BufferSize), bytesWritten);
     {$I+}
     if IOResult <> 0 then begin
       Raise(ecStreamReadError);

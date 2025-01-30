@@ -42,6 +42,11 @@ type
   TFontFormats = set of TFontFormat;
   TFillPattern = array[0..15] of word;
   TLinePattern = word;
+  TImageFlag = (
+    ifTransparent,
+    ifStreamed
+  );
+  TImageFlags = set of TImageFlag;
 
   TGraphicsMode = object(TIdentifiable)
   private
@@ -254,16 +259,14 @@ type
     procedure EllipseCenter(APX, APY, ARadiusX, ARadiusY: integer); virtual;
     procedure Circle(ACenterX, ACenterY, ARadius: integer); virtual;
     procedure RenderText(APX, APY, ALength: integer; AText: PChar); virtual;
-    procedure DrawImage(APX, APY, AWidth, AHeight: integer; AImage: PByte); virtual;
-    procedure DrawImageT(APX, APY, AWidth, AHeight: integer; AImage: PByte); virtual;
-    procedure DrawImageRect(ARect: TRect; AImage: PByte); virtual;
-    procedure DrawImageRectT(ARect: TRect; AImage: PByte); virtual;
-    procedure DrawImageStream(APX, APY, AWidth, AHeight: integer; AStream: PStream); virtual;
-    procedure DrawImageStreamRect(ARect: TRect; AStream: PStream); virtual;
-    procedure DrawImageStreamT(APX, APY, AWidth, AHeight: integer; AStream: PStream); virtual;
-    procedure DrawImageStreamRectT(ARect: TRect; AStream: PStream); virtual;
-    procedure DrawImageStreamSection(ASourceRect: TRect; ADestX, ADestY: integer); virtual;
-    procedure DrawImageStreamSectionT(ASourceRect: TRect; ADestX, ADestY: integer); virtual;
+    procedure DrawImageCoords(APX, APY, AWidth, AHeight: integer;
+      var AImage; AFlags: TImageFlags); virtual;
+    procedure DrawImage(const ARect: TRect; var AImage;
+      AFlags: TImageFlags); virtual;
+    procedure DrawImageZoom(const ARect: TRect; var AImage;
+      AFlags: TImageFlags; AZoom: integer); virtual;
+    procedure DrawBufferRect(const ASourceBounds, ASourceRect: TRect;
+      const ADestPoint: TPoint; var ABuffer); virtual;
     procedure DrawText(APX, APY: integer; AText: string); virtual;
     procedure DrawTextLarge(APX, APY: integer; AText: PChar); virtual;
     procedure GetDrawRect(var ARect: TRect); virtual;
@@ -333,6 +336,7 @@ const
 var
   Graph: PGraphicsDriver;
   FontManager: TFontManager;
+  LineBuffer: array[0..1599] of byte;
 
 implementation
 
@@ -882,54 +886,28 @@ begin
   GetImageStream(ARect.X, ARect.Y, ARect.Width, ARect.Height, AStream);
 end;
 
-procedure TGraphicsDriver.DrawImage(APX, APY, AWidth, AHeight: integer; AImage: PByte);
+procedure TGraphicsDriver.DrawImageCoords(APX, APY, AWidth, AHeight: integer;
+  var AImage; AFlags: TImageFlags);
 begin
   Abstract;
 end;
 
-procedure TGraphicsDriver.DrawImageT(APX, APY, AWidth, AHeight: integer; AImage: PByte);
+procedure TGraphicsDriver.DrawImageZoom(const ARect: TRect; var AImage;
+  AFlags: TImageFlags; AZoom: integer);
 begin
   Abstract;
 end;
 
-procedure TGraphicsDriver.DrawImageRectT(ARect: TRect; AImage: PByte);
-begin
-  DrawImageT(ARect.X, ARect.Y, ARect.Width, ARect.Height, AImage);
-end;
-
-procedure TGraphicsDriver.DrawImageRect(ARect: TRect; AImage: PByte);
-begin
-  DrawImage(ARect.X, ARect.Y, ARect.Width, ARect.Height, AImage);
-end;
-
-procedure TGraphicsDriver.DrawImageStream(APX, APY, AWidth, AHeight: integer; AStream: PStream);
+procedure TGraphicsDriver.DrawBufferRect(const ASourceBounds, ASourceRect: TRect;
+  const ADestPoint: TPoint; var ABuffer); virtual;
 begin
   Abstract;
 end;
 
-procedure TGraphicsDriver.DrawImageStreamRect(ARect: TRect; AStream: PStream);
+procedure TGraphicsDriver.DrawImage(const ARect: TRect; var AImage;
+  AFlags: TImageFlags);
 begin
-  DrawImageStream(ARect.X, ARect.Y, ARect.Width, ARect.Height, AStream);
-end;
-
-procedure TGraphicsDriver.DrawImageStreamT(APX, APY, AWidth, AHeight: integer; AStream: PStream);
-begin
-  Abstract;
-end;
-
-procedure TGraphicsDriver.DrawImageStreamRectT(ARect: TRect; AStream: PStream);
-begin
-  DrawImageStreamT(ARect.X, ARect.Y, ARect.Width, ARect.Height, AStream);
-end;
-
-procedure TGraphicsDriver.DrawImageStreamSection(ASourceRect: TRect; ADestX, ADestY: integer);
-begin
-  Abstract;
-end;
-
-procedure TGraphicsDriver.DrawImageStreamSectionT(ASourceRect: TRect; ADestX, ADestY: integer);
-begin
-  Abstract;
+  DrawImageCoords(ARect.X, ARect.Y, ARect.Width, ARect.Height, AImage, AFlags);
 end;
 
 procedure TGraphicsDriver.GetImageDrawRects(APX, APY, AWidth, AHeight: longint;

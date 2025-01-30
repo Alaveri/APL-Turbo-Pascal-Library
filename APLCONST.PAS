@@ -5,8 +5,17 @@ interface
 
 const
   Alpha = ['A'..'Z', 'a'..'z'];
+  AlphaInternat = ['a'..'z', 'A'..'Z', #128..#154, #160..#165];
   AlphaNumeric = ['0'..'9', 'A'..'Z', 'a'..'z'];
-  AlphaNumericSpace = ['0'..'9', 'A'..'Z', 'a'..'z', ' '];
+  AlphaNumericInternat = ['0'..'9', 'a'..'z', 'A'..'Z', #128..#154, #160..#165];
+  AlphaNumericSpace = AlphaNumeric + [#32];
+  AlphaNumericSpaceInternat = AlphaNumericInternat + [#32];
+  InternatUpperChars = [#128, #142..#144, #146, #153..#154, #165];
+  InternatLowerChars = [#129, #130, #132, #134, #135, #145, #148, #164];
+  UpperCharsInternat = ['A'..'Z'] + InternatUpperChars;
+  LowerCharsInternat = ['a'..'z'] + InternatLowerChars;
+  UpperChars = ['A'..'Z'];
+  LowerChars = ['a'..'z'];
   Numeric = ['0'..'9'];
   Puncuation = ['.', ',', ';', ':', '!', '?', '"', '''', '(', ')', '[', ']',
     '{', '}', '/', '\', '|', '-', '+', '=', '*', '&', '^', '%', '$', '#',
@@ -140,6 +149,10 @@ const
   ecNullParameter = 1101;
   ecInvalidOperation = 1102;
   ecInvalidArgument = 1103;
+
+  { Dictionary errors }
+  ecKeyNotFound = 1201;
+  ecDuplicateKey = 1202;
 
   { User defined errors }
   ecUser = 5000;

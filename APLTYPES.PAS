@@ -12,11 +12,15 @@ type
   PPointer = ^pointer;
   PBoolean = ^boolean;
   PByte = ^byte;
-  PShort = ^shortint;
-  PInt = ^integer;
-  PUInt = ^word;
+  PShortint = ^shortint;
+  PInteger = ^integer;
   PWord = ^word;
-  PLong = ^longint;
+  PLongint = ^longint;
+  PSingle = ^single;
+  PDouble = ^double;
+  PExtended = ^extended;
+  PString = ^string;
+  PComp = ^comp;
   PByteArray = ^TByteArray;
   PBufferArray = ^TBufferArray;
   PEvent = ^TEvent;
@@ -246,4 +250,16 @@ begin
   Current := 0;
 end;
 
+var
+  PreviousExitProc: PProc;
+
+procedure Finalize; far;
+begin
+  ExitProc := PreviousExitProc;
+end;
+
+begin
+  PreviousExitProc := ExitProc;
+  ExitProc := @Finalize;
+  WhiteSpaceChars := [#32, #13, #10, #9];
 end.

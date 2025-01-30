@@ -44,10 +44,8 @@ type
     procedure HLinePattern(APattern: TLinePattern; APX, APY, AWidth: integer); virtual;
     procedure VLinePattern(APattern: word; APX, APY, AHeight: integer); virtual;
     procedure InverseHLine(APX, APY, AWidth: integer); virtual;
-    procedure DrawImage(APX, APY, AWidth, AHeight: integer; AImage: PByte); virtual;
-    procedure DrawImageT(APX, APY, AWidth, AHeight: integer; AImage: PByte); virtual;
-    procedure DrawImageStream(APX, APY, AWidth, AHeight: integer; AStream: PStream); virtual;
-    procedure DrawImageStreamT(APX, APY, AWidth, AHeight: integer; AStream: PStream); virtual;
+    procedure DrawImageCoords(APX, APY, AWidth, AHeight: integer;
+      var AImage; AFlags: TImageFlags); virtual;
     procedure CopyToOffScreen(const ASource, ADest: TRect); virtual;
     procedure CopyFromOffScreen(const ASource, ADest: TRect); virtual;
     procedure CopyFullScreenToOff(ASourcePage, ADestPage: word); virtual;
@@ -63,6 +61,18 @@ implementation
 
 uses
   MouseDrv;
+
+type
+  TLineInfo = record
+    Image: pointer;
+    YIndex: integer;
+    Start: longint;
+    DrawRect: TRect;
+    ImageRect: TRect;
+    Screen: PByte;
+    Driver: PVga8Driver;
+  end;
+  TDrawLineProc = procedure(const ALineInfo: TLineInfo);
 
 procedure TVga8Driver.Init;
 var
@@ -491,128 +501,119 @@ begin
   end;
 end;
 
-procedure TVga8Driver.DrawImage(APX, APY, AWidth, AHeight: integer; AImage: PByte);
+procedure DrawLineBuffer(const ALineInfo: TLineInfo);
+var
+  screenPtr, imagePtr: PByte;
+  lineWidth, partialWidth: integer;
+begin
+  with ALineInfo, Driver^ do begin
+    imagePtr := PByte(Image);
+    screenPtr := Screen;
+    Inc(imagePtr, (YIndex + ImageRect.Y) * ImageRect.Width + ImageRect.X);
+    lineWidth := DrawRect.Width;
+    Move(imagePtr^, screenPtr^, lineWidth);
+  end;
+end;
+
+procedure DrawLineStream(const ALineInfo: TLineInfo);
+var
+  screenPtr, imagePtr: PByte;
+  lineWidth, partialWidth: integer;
+  stream: PStream;
+  sy, yIndex: integer;
+begin
+  with ALineInfo, Driver^ do begin
+    imagePtr := PByte(Image);
+    screenPtr := Screen;
+    stream^.Seek(Start + (YIndex + ImageRect.Y) * longint(ImageRect.Width) +
+      ImageRect.X, soFromBeginning);
+    lineWidth := DrawRect.Width;
+    stream^.Read(screenPtr, lineWidth);
+    Driver^.CheckReRaise(stream);
+  end;
+end;
+
+procedure DrawTransparentLineBuffer(const ALineInfo: TLineInfo);
+var
+  screenPtr, imagePtr: PByte;
+  xIndex, lineWidth, sy: integer;
+begin
+  with ALineInfo, Driver^ do begin
+    imagePtr := PByte(Image);
+    screenPtr := Screen;
+    Inc(imagePtr, (YIndex + ImageRect.Y) * ImageRect.Width + ImageRect.X);
+    lineWidth := DrawRect.Width;
+    for xIndex := 0 to DrawRect.Width - 1 do begin
+      if imagePtr^ <> TransparentColor then
+        screenPtr^ := imagePtr^;
+      Inc(imagePtr);
+      Inc(screenPtr);
+    end;
+  end;
+end;
+procedure DrawTransparentLineStream(const ALineInfo: TLineInfo);
+var
+  sy: integer;
+  imageStream: PStream;
+  xIndex: integer;
+  screenPtr: PByte;
+  color: byte;
+begin
+  with ALineInfo, Driver^ do begin
+    imageStream := PStream(Image);
+    screenPtr := Screen;
+    imageStream^.Seek(Start + (YIndex + ImageRect.Y) * longint(ImageRect.Width) +
+      ImageRect.X, soFromBeginning);
+    imageStream^.Read(@LineBuffer, ImageRect.Width);
+    for xIndex := 0 to ImageRect.Width - 1 do begin
+      color := LineBuffer[xIndex];
+      if color <> TransparentColor then
+        screen^ := color;
+      Inc(screenPtr);
+    end;
+    Driver^.CheckReRaise(imageStream);
+  end;
+end;
+
+procedure TVga8Driver.DrawImageCoords(APX, APY, AWidth, AHeight: integer;
+  var AImage; AFlags: TImageFlags);
 var
   imageRect, drawRect: TRect;
   yIndex: longint;
-  screen, image: PByte;
-  sy: longint;
-  lineWidth: integer;
-begin
-  if HasException then
-    exit;
-  GetImageDrawRects(APX, APY, AWidth, AHeight, imageRect, drawRect);
-  if drawRect.IsEmpty then
-    exit;
-  sy := drawRect.Y;
-  lineWidth := drawRect.Width;
-  for yIndex := 0 to drawRect.Height - 1 do begin
-    screen := GetScreenPointer(drawRect.X, sy);
-    image := AImage;
-    Inc(image, (yIndex + imageRect.Y) * AWidth + imageRect.X);
-    Move(image^, screen^, lineWidth);
-    Inc(image, lineWidth);
-    Inc(sy);
-  end;
-end;
-
-procedure TVga8Driver.DrawImageT(APX, APY, AWidth, AHeight: integer; AImage: PByte);
-var
-  imageRect, drawRect: TRect;
-  xIndex, yIndex: integer;
-  sy: word;
-  screen, image: PByte;
-begin
-  if HasException then
-    exit;
-  GetImageDrawRects(APX, APY, AWidth, AHeight, imageRect, drawRect);
-  if drawRect.IsEmpty then
-    exit;
-  sy := drawRect.Y;
-  for yIndex := 0 to drawRect.Height - 1 do begin
-    screen := GetScreenPointer(drawRect.X, sy);
-    image := AImage;
-    Inc(image, (yIndex + imageRect.Y) * imageRect.Width + imageRect.X);
-    for xIndex := 0 to drawRect.Width - 1 do begin
-      if image^ <> TransparentColor then
-        screen^ := image^;
-      Inc(image);
-      Inc(screen);
-    end;
-    Inc(sy);
-  end;
-end;
-
-procedure TVga8Driver.DrawImageStream(APX, APY, AWidth, AHeight: integer; AStream: PStream);
-var
-  imageRect, drawRect: TRect;
-  yIndex: integer;
-  screen: PByte;
-  sy: word;
-  lineWidth: integer;
-  streamStart: longint;
-begin
-  if AStream^.HasException or HasException then
-    exit;
-  GetImageDrawRects(APX, APY, AWidth, AHeight, imageRect, drawRect);
-  if drawRect.IsEmpty then
-    exit;
-  sy := drawRect.Y;
-  lineWidth := drawRect.Width;
-  streamStart := AStream^.Position;
-  for yIndex := 0 to drawRect.Height - 1 do begin
-    screen := GetScreenPointer(drawRect.X, sy);
-    AStream^.Seek(streamStart + (yIndex + imageRect.Y) * longint(imageRect.Width)
-      + imageRect.X, soFromBeginning);
-    AStream^.Read(screen, lineWidth);
-    Inc(sy);
-    if AStream^.HasException then
-      break;
-  end;
-  if AStream^.HasException then
-    Raise(AStream^.Exception^.Code);
-end;
-
-procedure TVga8Driver.DrawImageStreamT(APX, APY, AWidth, AHeight: integer; AStream: PStream);
-var
-  imageRect, drawRect: TRect;
-  xIndex, yIndex: integer;
-  screen: PByte;
-  imageLine, linePtr: PByte;
-  streamStart: longint;
+  drawLine: TDrawLineProc;
   sy: integer;
-  lineWidth: integer;
+  info: TLineInfo;
 begin
-  if AStream^.HasException or HasException then
+  if HasException then
     exit;
   GetImageDrawRects(APX, APY, AWidth, AHeight, imageRect, drawRect);
-  if drawRect.IsEmpty then
+  if drawRect.IsEmpty or imageRect.IsEmpty then
     exit;
-  lineWidth := drawRect.Width;
-  GetMem(imageLine, lineWidth);
-  if not Assigned(imageLine) then begin
-    Raise(ecNotEnoughMemory);
-    exit;
-  end;
-  streamStart := AStream^.Position;
   sy := drawRect.Y;
-  AStream^.Seek(streamStart + (yIndex + imageRect.Y) * AWidth + imageRect.X, soFromPosition);
+  if AFlags * [ifStreamed, ifTransparent] = [ifStreamed, ifTransparent] then
+    drawLine := DrawTransparentLineStream
+  else if AFlags * [ifStreamed, ifTransparent] = [ifStreamed] then
+    drawLine := DrawLineStream
+  else if AFlags * [ifTransparent] = [ifTransparent] then
+    drawLine := DrawTransparentLineBuffer
+  else
+    drawLine := DrawLineBuffer;
+  sy := drawRect.Y;
+  info.Image := @AImage;
+  info.DrawRect.CreateRect(drawRect);
+  info.ImageRect.CreateRect(imageRect);
+  info.Start := 0;
+  info.Driver := @self;
+  if AFlags * [ifStreamed] = [ifStreamed] then
+    info.Start := PStream(AImage)^.Position;
   for yIndex := 0 to drawRect.Height - 1 do begin
-    screen := GetScreenPointer(drawRect.X, drawRect.Y + yIndex);
-    AStream^.Seek(yIndex * imageRect.Width + imageRect.X, soFromBeginning);
-    AStream^.Read(imageLine, lineWidth);
-    linePtr := imageLine;
-    for xIndex := 0 to lineWidth - 1 do begin
-      if linePtr^ <> TransparentColor then
-        screen^ := linePtr^;
-      Inc(screen);
-      Inc(linePtr);
-    end;
+    info.Screen := GetScreenPointer(DrawRect.X, sy + yIndex);
+    info.YIndex := yIndex;
+    drawLine(info);
+    if HasException then
+      break;
     Inc(sy);
   end;
-  if AStream^.HasException then
-    Raise(AStream^.Exception^.Code);
-  FreeMem(imageLine, lineWidth);
 end;
 
 procedure TVga8Driver.SetDisplayPage(APage: word);

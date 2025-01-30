@@ -62,7 +62,7 @@ type
   public
     constructor Create(const AStream: PStream; ACompression: TAplCompression;
       ACompressionLevel: TCompressionLevel);
-    constructor CreateFile(const AFileName: string);
+    constructor CreateFromFile(const AFileName: string);
     destructor Free; virtual;
     procedure Init; virtual;
     procedure ReadHeader(var AHeader: TAplImageHeader); virtual;
@@ -79,7 +79,7 @@ type
   public
     constructor Create(const AStream: PStream; ACompression: TAplCompression;
       ACompressionLevel: TCompressionLevel);
-    constructor CreateFile(const AFileName: string);
+    constructor CreateFromFile(const AFileName: string);
     destructor Free; virtual;
     procedure Init; virtual;
     procedure WriteHeader(var AHeader: TAplImageHeader); virtual;
@@ -124,8 +124,8 @@ type
     constructor CreateHeaderPalette(var AHeader: TAplImageHeader;
       APalette: PRgbPalette);
     constructor CreateHeader(var AHeader: TAplImageHeader);
-    constructor CreateStream(const AStream: PStream);
-    constructor CreateFile(const AFileName: string);
+    constructor CreateFromStream(const AStream: PStream);
+    constructor CreateFromFile(const AFileName: string);
     constructor CreateDimsBpp(const AWidth, AHeight, ABpp: word);
     constructor CreateDims(const AWidth, AHeight: word);
     function Compression: TAplCompression;
@@ -275,7 +275,6 @@ begin
   FHeader.Planes := APlanes;
   FHeader.DataSize := longint(FHeader.Width) * FHeader.Height * FHeader.Bpp div 8;
   SetPalette(APalette, FHeader);
-  CreateBuffer;
 end;
 
 constructor TAplImage.Create(AWidth, AHeight, ABpp, APlanes: word;
@@ -283,6 +282,7 @@ constructor TAplImage.Create(AWidth, AHeight, ABpp, APlanes: word;
 begin
   inherited Create;
   InitAll(AWidth, AHeight, ABpp, APlanes, APalette);
+  CreateBuffer;
 end;
 
 constructor TAplImage.CreateHeaderPalette(var AHeader: TAplImageHeader;
@@ -290,21 +290,23 @@ constructor TAplImage.CreateHeaderPalette(var AHeader: TAplImageHeader;
 begin
   inherited Create;
   InitAll(AHeader.Width, AHeader.Height, AHeader.Bpp, AHeader.Planes, APalette);
+  CreateBuffer;
 end;
 
 constructor TAplImage.CreateHeader(var AHeader: TAplImageHeader);
 begin
   inherited Create;
   InitAll(AHeader.Width, AHeader.Height, AHeader.Bpp, AHeader.Planes, nil);
+  CreateBuffer;
 end;
 
-constructor TAplImage.CreateStream(const AStream: PStream);
+constructor TAplImage.CreateFromStream(const AStream: PStream);
 begin
   inherited Create;
   LoadFromStream(AStream);
 end;
 
-constructor TAplImage.CreateFile(const AFileName: string);
+constructor TAplImage.CreateFromFile(const AFileName: string);
 begin
   inherited Create;
   LoadFromFile(AFileName);
@@ -314,12 +316,14 @@ constructor TAplImage.CreateDimsBpp(const AWidth, AHeight, ABpp: word);
 begin
   inherited Create;
   InitAll(AWidth, AHeight, ABpp, 1, nil);
+  CreateBuffer;
 end;
 
 constructor TAplImage.CreateDims(const AWidth, AHeight: word);
 begin
   inherited Create;
   InitAll(AWidth, AHeight, 8, 1, nil);
+  CreateBuffer;
 end;
 
 function TAplImage.CheckVersion(var AHeader: TAplImageHeader): word;
@@ -541,7 +545,7 @@ procedure TAplBufferImage.ClearLong(AColor: longint);
 var
   index: word;
   size: word;
-  ptr: PLong;
+  ptr: PLongint;
 begin
   if HasException then
     exit;
@@ -778,7 +782,7 @@ begin
   FCompressionLevel := ACompressionLevel;
 end;
 
-constructor TAplImageReader.CreateFile(const AFileName: string);
+constructor TAplImageReader.CreateFromFile(const AFileName: string);
 begin
   inherited Create;
   FStream := New(PFileStream, Create(AFileName, fmRead));
@@ -849,7 +853,7 @@ begin
   FCompressionLevel := ACompressionLevel;
 end;
 
-constructor TAplImageWriter.CreateFile(const AFileName: string);
+constructor TAplImageWriter.CreateFromFile(const AFileName: string);
 begin
   inherited Create;
   FStream := New(PFileStream, Create(AFileName, fmWrite));

@@ -317,12 +317,13 @@ begin
   if (not MouseCursor^.Visible) or not (AMouseState.Visible) then
     exit;
   if Assigned(MouseCursor^.FBackData) then begin
-    Graph^.DrawImage(
+    Graph^.DrawImageCoords(
       AMouseState.X - MouseCursor^.OffsetX,
       AMouseState.Y - MouseCursor^.OffsetY,
       MouseCursor^.Width,
       MouseCursor^.Height,
-      MouseCursor^.FBackData
+      MouseCursor^.FBackData,
+      []
     );
   end;
 end;
@@ -380,7 +381,7 @@ end;
 
 procedure TMouseCursor.Paint;
 begin
-  Graph^.DrawImageT(X - OffsetX, Y - OffsetY, Width, Height, Image);
+  Graph^.DrawImageCoords(X - OffsetX, Y - OffsetY, Width, Height, Image, [ifTransparent]);
 end;
 
 procedure TMouseCursor.Draw;
