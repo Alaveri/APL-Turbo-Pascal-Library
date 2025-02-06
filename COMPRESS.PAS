@@ -54,6 +54,9 @@ type
     constructor CreateBufferSize(AReadBufferSize, AWriteBufferSize: word);
     constructor Create;
     function CompressStream(ASource, ADest: PStream; ALength: longint): longint; virtual;
+    function CompressFromBuffer(ASource: pointer; ADest: PStream; ALength: word): longint;
+    function CompressBufferToBuffer(ASource: pointer; var ADest: pointer;
+      ALength: word): longint;
     function ReadByte: byte;
     function ReadBits(ABitCount: shortint): word;
     function FlushWriteBuffer: boolean;
@@ -62,6 +65,9 @@ type
     procedure WriteByte(AByte: byte);
     procedure EndWriteBits; virtual;
     procedure DecompressStream(ASource, ADest: PStream; AOriginalSize: longint); virtual;
+    procedure DecompressToBuffer(ASource: PStream; ADest: pointer; AOriginalSize: word);
+    procedure DecompressBufferToBuffer(ASource: pointer; ADest: pointer;
+      ALength, AOriginalSize: word);
     procedure Init; virtual;
     procedure InitCompression; virtual;
     procedure UpdateProgress(const AMax, ACurrent: longint);
@@ -313,6 +319,90 @@ begin
   FReadBitBuffer := 0;
   FReadPtr := FReadBuffer;
   FProgressCounter := 0;
+end;
+
+function TCompressor.CompressFromBuffer(ASource: pointer; ADest: PStream; ALength: word): longint;
+var
+  sourceStream: PMemoryStream;
+begin
+  CompressFromBuffer := 0;
+  sourceStream := New(PMemoryStream, CreateBuffer(ASource, ALength));
+  if NilPtr(sourceStream, ecNotEnoughMemory) then
+    exit;
+  sourceStream^.FreeBuffers := false;
+  CompressFromBuffer := CompressStream(sourceStream, ADest, ALength);
+  CheckReRaise(ADest);
+  CheckReRaise(sourceStream);
+  FreeAndNil(sourceStream);
+end;
+
+procedure TCompressor.DecompressToBuffer(ASource: PStream; ADest: pointer; AOriginalSize: word);
+var
+  destStream: PMemoryStream;
+begin
+  destStream := New(PMemoryStream, CreateBuffer(ADest, AOriginalSize));
+  if NilPtr(destStream, ecNotEnoughMemory) then
+    exit;
+  destStream^.FreeBuffers := false;
+  DecompressStream(ASource, destStream, AOriginalSize);
+  CheckReRaise(ASource);
+  CheckReRaise(destStream);
+  FreeAndNil(destStream);
+end;
+
+procedure TCompressor.DecompressBufferToBuffer(ASource: pointer; ADest: pointer;
+  ALength, AOriginalSize: word);
+var
+  sourceStream: PMemoryStream;
+  destStream: PMemoryStream;
+begin
+  sourceStream := New(PMemoryStream, CreateBuffer(ASource, ALength));
+  if NilPtr(sourceStream, ecNotEnoughMemory) then
+    exit;
+  sourceStream^.FreeBuffers := false;
+  destStream := New(PMemoryStream, CreateBuffer(ADest, AOriginalSize));
+  if NilPtr(destStream, ecNotEnoughMemory) then begin
+    FreeAndNil(sourceStream);
+    exit;
+  end;
+  destStream^.FreeBuffers := false;
+  DecompressStream(sourceStream, destStream, AOriginalSize);
+  CheckReRaise(sourceStream);
+  CheckReRaise(destStream);
+  FreeAndNil(sourceStream);
+  FreeAndNil(destStream);
+end;
+
+function TCompressor.CompressBufferToBuffer(ASource: pointer; var ADest: pointer;
+  ALength: word): longint;
+var
+  sourceStream: PMemoryStream;
+  destStream: PBufferStream;
+  size: longint;
+begin
+  ADest := nil;
+  sourceStream := New(PMemoryStream, CreateBuffer(ASource, ALength));
+  if NilPtr(sourceStream, ecNotEnoughMemory) then
+    exit;
+  sourceStream^.FreeBuffers := false;
+  destStream := New(PBufferStream, Create);
+  if NilPtr(destStream, ecNotEnoughMemory) then begin
+    FreeAndNil(sourceStream);
+    exit;
+  end;
+  destStream^.FreeBuffers := false;
+  size := CompressStream(sourceStream, destStream, ALength);
+  CheckReRaise(sourceStream);
+  CheckReRaise(destStream);
+  if size > MaxVarSize then
+    Raise(ecCompressedDataTooLarge);
+  if not HasException then begin
+    destStream^.Resize(size);
+    ADest := destStream^.BufferPointer;
+  end;
+  FreeAndNil(sourceStream);
+  FreeAndNil(destStream);
+  CompressBufferToBuffer := ALength;
 end;
 
 function TCompressor.CompressStream(ASource, ADest: PStream; ALength: longint): longint;

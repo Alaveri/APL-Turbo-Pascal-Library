@@ -137,6 +137,7 @@ type
     function DataSize: longint;
     function HasExtendedData: boolean;
     function Palette: PRgbPalette;
+    procedure ResetDims(AWidth, AHeight: integer);
     procedure CreateBuffer; virtual;
     procedure SetPalette(APalette: PRgbPalette; var AHeader: TAplImageHeader);
     procedure SetCompression(const ACompression: TAplCompression;
@@ -155,6 +156,7 @@ type
   public
     function Buffer: PByte;
     destructor Free; virtual;
+    procedure SetBuffer(ABuffer: PByte);
     procedure CreateBuffer; virtual;
     procedure Clear(AColor: byte); virtual;
     procedure ClearWord(AColor: word); virtual;
@@ -431,6 +433,12 @@ begin
   end;
 end;
 
+procedure TAplImage.ResetDims(AWidth, AHeight: integer);
+begin
+  FHeader.Width := AWidth;
+  FHeader.Height := AHeight;
+end;
+
 procedure TAplImage.LoadFromStream(AStream: PStream);
 begin
   Abstract;
@@ -479,6 +487,13 @@ end;
 function TAplBufferImage.Buffer: PByte;
 begin
   Buffer := FBuffer;
+end;
+
+procedure TAplBufferImage.SetBuffer(ABuffer: PByte);
+begin
+  if Assigned(FBuffer) then
+    FreeMem(FBuffer, FHeader.DataSize);
+  FBuffer := ABuffer;
 end;
 
 procedure TAplBufferImage.Clear(AColor: byte);
@@ -978,6 +993,7 @@ procedure TAplImageBufferWriter.WriteImage(AImageData: pointer; var AHeader: TAp
 var
   compressor: PCompressor;
   stream: PMemoryStream;
+  size: longint;
 begin
   if HasException then
     exit;
@@ -995,7 +1011,7 @@ begin
       exit;
     stream^.FreeBuffers := false;
     compressor := TCompression.GetCompressor(AHeader.Compression, AHeader.CompressionLevel);
-    compressor^.CompressStream(stream, FStream, AHeader.DataSize);
+    size := compressor^.CompressStream(stream, FStream, AHeader.DataSize);
     CheckReRaise(compressor);
     FreeAndNil(compressor);
     FreeAndNil(stream);

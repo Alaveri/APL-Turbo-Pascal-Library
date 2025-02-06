@@ -110,6 +110,7 @@ const
   ecStreamWriteError = 410;
   ecStreamSeekError = 411;
   ecStreamFormatNotSupported = 412;
+  ecStreamBufferOverflow = 413;
 
   { Text errors }
   ecTextDriverNotSupported = 501;
@@ -120,6 +121,7 @@ const
   ecInvalidCompressionSource = 601;
   ecCompressionBitSizeError = 602;
   ecCompressorNotSpecified = 603;
+  ecCompressedDataTooLarge = 604;
 
   { List Errors }
   ecListCapacityOverflow = 701;
@@ -144,6 +146,7 @@ const
   ecFileInvalidFormat = 1006;
   ecDirChangeError = 1007;
   ecFileInvalidVersion = 1008;
+  ecFileTooLarge = 1009;
 
   { System errors }
   ecNullParameter = 1101;
@@ -331,7 +334,13 @@ begin
   AddError(ecInvalidPalette, 'Invalid palette');
   AddError(ecCompressionBitSizeError, 'Compression bit size too large');
   AddError(ecCompressorNotSpecified, 'Compressor not specified');
+  AddError(ecStreamBufferOverflow, 'Stream buffer overflow');
+  AddError(ecKeyNotFound, 'Key not found');
+  AddError(ecDuplicateKey, 'Duplicate key');
   AddError(ecImageTooLarge, 'Image too large');
+  AddError(ecFileTooLarge, 'File too large');
+  AddError(ecMouseError, 'Mouse error');
+  AddError(ecCompressedDataTooLarge, 'Compressed data too large');
 end;
 
 procedure TErrorList.AddError(AErrorCode: word; AErrorMessage: string);

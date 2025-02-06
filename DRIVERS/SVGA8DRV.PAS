@@ -85,11 +85,11 @@ type
     procedure VLinePattern(APattern: word; APX, APY, AHeight: integer); virtual;
     procedure InverseHLine(APX, APY, AWidth: integer); virtual;
     procedure DrawImageCoords(APX, APY, AWidth, AHeight: integer;
-      var AImage; AFlags: TImageFlags); virtual;
-    procedure DrawImageZoom(const ARect: TRect; var AImage; AFlags: TImageFlags;
+      AImage: pointer; AFlags: TImageFlags); virtual;
+    procedure DrawImageZoom(const ARect: TRect; AImage: pointer; AFlags: TImageFlags;
       AZoom: integer); virtual;
-    procedure DrawBufferRect(const ASourceBounds, ASourceRect: TRect;
-      const ADestPoint: TPoint; var ABuffer); virtual;
+    procedure DrawBufferRect(var ASourceBounds, ASourceRect: TRect;
+      const ADestPoint: TPoint; ABuffer: pointer); virtual;
     procedure CopyToOffScreen(const ASource, ADest: TRect); virtual;
     procedure CopyFromOffScreen(const ASource, ADest: TRect); virtual;
     procedure SetDisplayPage(APage: word); virtual;
@@ -885,7 +885,7 @@ begin
   end;
 end;
 
-procedure TSVga8Driver.DrawImageZoom(const ARect: TRect; var AImage; AFlags: TImageFlags;
+procedure TSVga8Driver.DrawImageZoom(const ARect: TRect; AImage: pointer; AFlags: TImageFlags;
   AZoom: integer);
 var
   imageRect, drawRect: TRect;
@@ -897,36 +897,46 @@ var
 begin
 end;
 
-procedure TSVga8Driver.DrawBufferRect(const ASourceBounds, ASourceRect: TRect;
-  const ADestPoint: TPoint; var ABuffer); virtual;
+procedure TSVga8Driver.DrawBufferRect(var ASourceBounds, ASourceRect: TRect;
+  const ADestPoint: TPoint; ABuffer: pointer);
 var
   image: PByte;
   screenPtr, imagePtr: PByte;
   source, dest: TRect;
   yIndex: integer;
   offset: longint;
+  lineWidth, partialWidth: integer;
 begin
   image := PByte(ABuffer);
   dest.CreateRect(ASourceRect);
-  dest.X := ADest.X;
-  dest.Y := ADest.Y;
+  dest.X := ADestPoint.X;
+  dest.Y := ADestPoint.Y;
   dest.Intersect(Mode^.Bounds);
   dest.Intersect(State^.ViewPort);
-  source.Create(ASourceRect);
+  source.CreateRect(ASourceRect);
   source.Intersect(ASourceBounds);
   if dest.IsEmpty then
     exit;
-  imagePtr := image;
-  Inc(imagePtr, source.Y * ASourceBounds.Width + source.X);
+  lineWidth := source.Width;
   for yIndex := 0 to dest.Height - 1 do begin
     screenPtr := InternalGetScreenPointer(dest.X, dest.Y + yIndex, true, offset);
-    Move(imagePtr^, screenPtr^, dest.Width);
-    Inc(imagePtr, ASourceBounds.Width);
+    imagePtr := image;
+    Inc(imagePtr, yIndex * ASourceBounds.Width + ASourceRect.X);
+    if offset + lineWidth > FMaxOffset then begin
+      partialWidth := FMaxOffset - offset + 1;
+      Move(imagePtr^, screenPtr^, partialWidth);
+      Inc(imagePtr, partialWidth);
+      SetBank(SvgaState^.FCurrentBank + 1);
+      screenPtr := Mode^.FrameBuffer;
+      Move(imagePtr^, screenPtr^, lineWidth - partialWidth);
+    end
+    else
+      Move(imagePtr^, screenPtr^, lineWidth);
   end;
 end;
 
 procedure TSVga8Driver.DrawImageCoords(APX, APY, AWidth, AHeight: integer;
-  var AImage; AFlags: TImageFlags);
+  AImage: pointer; AFlags: TImageFlags);
 var
   imageRect, drawRect: TRect;
   yIndex: longint;

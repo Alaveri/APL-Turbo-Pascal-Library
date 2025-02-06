@@ -260,13 +260,13 @@ type
     procedure Circle(ACenterX, ACenterY, ARadius: integer); virtual;
     procedure RenderText(APX, APY, ALength: integer; AText: PChar); virtual;
     procedure DrawImageCoords(APX, APY, AWidth, AHeight: integer;
-      var AImage; AFlags: TImageFlags); virtual;
-    procedure DrawImage(const ARect: TRect; var AImage;
+      AImage: pointer; AFlags: TImageFlags); virtual;
+    procedure DrawImage(const ARect: TRect; AImage: pointer;
       AFlags: TImageFlags); virtual;
-    procedure DrawImageZoom(const ARect: TRect; var AImage;
+    procedure DrawImageZoom(const ARect: TRect; AImage: pointer;
       AFlags: TImageFlags; AZoom: integer); virtual;
-    procedure DrawBufferRect(const ASourceBounds, ASourceRect: TRect;
-      const ADestPoint: TPoint; var ABuffer); virtual;
+    procedure DrawBufferRect(var ASourceBounds, ASourceRect: TRect;
+      const ADestPoint: TPoint; ABuffer: pointer); virtual;
     procedure DrawText(APX, APY: integer; AText: string); virtual;
     procedure DrawTextLarge(APX, APY: integer; AText: PChar); virtual;
     procedure GetDrawRect(var ARect: TRect); virtual;
@@ -887,24 +887,24 @@ begin
 end;
 
 procedure TGraphicsDriver.DrawImageCoords(APX, APY, AWidth, AHeight: integer;
-  var AImage; AFlags: TImageFlags);
+  AImage: pointer; AFlags: TImageFlags);
 begin
   Abstract;
 end;
 
-procedure TGraphicsDriver.DrawImageZoom(const ARect: TRect; var AImage;
+procedure TGraphicsDriver.DrawImageZoom(const ARect: TRect; AImage: pointer;
   AFlags: TImageFlags; AZoom: integer);
 begin
   Abstract;
 end;
 
-procedure TGraphicsDriver.DrawBufferRect(const ASourceBounds, ASourceRect: TRect;
-  const ADestPoint: TPoint; var ABuffer); virtual;
+procedure TGraphicsDriver.DrawBufferRect(var ASourceBounds, ASourceRect: TRect;
+  const ADestPoint: TPoint; ABuffer: pointer);
 begin
   Abstract;
 end;
 
-procedure TGraphicsDriver.DrawImage(const ARect: TRect; var AImage;
+procedure TGraphicsDriver.DrawImage(const ARect: TRect; AImage: pointer;
   AFlags: TImageFlags);
 begin
   DrawImageCoords(ARect.X, ARect.Y, ARect.Width, ARect.Height, AImage, AFlags);

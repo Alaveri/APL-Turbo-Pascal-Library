@@ -391,7 +391,7 @@ begin
     exit;
   end;
   if AddTotalToStream then
-    AOriginalSize := Source^.ReadLong;
+    AOriginalSize := ASource^.ReadLong;
 
   InitCoder;
   AllocateDecodeBuffer;
@@ -422,7 +422,7 @@ begin
     else if code = FCodes.EndOfStream then
       break;
     if code >= FNextCode then begin
-      FDecodeBuffer^ := character;
+      FDecodeBuffer^ := byte(character);
       count := DecodeString(1, oldCode);
     end
     else

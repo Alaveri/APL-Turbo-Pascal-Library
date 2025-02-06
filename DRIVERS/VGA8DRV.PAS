@@ -45,7 +45,7 @@ type
     procedure VLinePattern(APattern: word; APX, APY, AHeight: integer); virtual;
     procedure InverseHLine(APX, APY, AWidth: integer); virtual;
     procedure DrawImageCoords(APX, APY, AWidth, AHeight: integer;
-      var AImage; AFlags: TImageFlags); virtual;
+      AImage: pointer; AFlags: TImageFlags); virtual;
     procedure CopyToOffScreen(const ASource, ADest: TRect); virtual;
     procedure CopyFromOffScreen(const ASource, ADest: TRect); virtual;
     procedure CopyFullScreenToOff(ASourcePage, ADestPage: word); virtual;
@@ -576,7 +576,7 @@ begin
 end;
 
 procedure TVga8Driver.DrawImageCoords(APX, APY, AWidth, AHeight: integer;
-  var AImage; AFlags: TImageFlags);
+  AImage: pointer; AFlags: TImageFlags);
 var
   imageRect, drawRect: TRect;
   yIndex: longint;
