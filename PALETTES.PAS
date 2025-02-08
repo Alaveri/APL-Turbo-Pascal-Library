@@ -62,15 +62,16 @@ type
     FFormat: TPaletteFormat;
     FCompression: TAplCompression;
     FCompressionLevel: TCompressionLevel;
-    procedure LoadPalette(AStream: PStream);
+    procedure LoadAplPalette(AStream: PStream);
     procedure LoadJascPalette(AStream: PStream);
     procedure LoadGimpPalette(AStream: PStream);
-    procedure SavePalette(AStream: PStream);
+    procedure SaveAplPalette(AStream: PStream);
     procedure SaveJascPalette(AStream: PStream);
     procedure SaveGimpPalette(AStream: PStream);
     function ReadLine(AStream: PStream): string;
     procedure WriteLine(AStream: PStream; const ALine: string);
   public
+    constructor Create(AFormat: TPaletteFormat);
     constructor CreateFromFile(AFilename: string; AFormat: TPaletteFormat);
     constructor CreateFromStream(AStream: PStream; AFormat: TPaletteFormat);
     constructor CreateVgaStandard;
@@ -78,6 +79,10 @@ type
     function Format: TPaletteFormat;
     function GetPaletteDataVga: PRgbColors;
     function ColorCount: word;
+    function ByteSize: word;
+    function Compression: TAplCompression;
+    function CompressionLevel: TCompressionLevel;
+    procedure SetCount(ACount: word);
     procedure SetFormat(AFormat: TPaletteFormat);
     procedure SetPaletteData(AData: PRgbColors);
     procedure SetColor(AIndex: word; var AColor: TRgbColor);
@@ -135,6 +140,10 @@ const
 
 implementation
 
+uses
+  Graphics,
+  Gr8Drv;
+
 procedure TRgbPalette.Init;
 begin
   inherited Init;
@@ -153,8 +162,10 @@ var
   color: TRgbColor;
 begin
   inherited Create;
-  if Assigned(FColors) then
+  if Assigned(FColors) then begin
     FreeMem(FColors, FColorCount * SizeOf(TRgbColor));
+    FColors := nil;
+  end;
   FColorCount := 256;
   GetMem(FColors, FColorCount * SizeOf(TRgbColor));
   if NilPtr(FColors, ecNotEnoughMemory) then
@@ -259,6 +270,12 @@ begin
   end;
 end;
 
+constructor TRgbPalette.Create(AFormat: TPaletteFormat);
+begin
+  inherited Create;
+  FFormat := AFormat;
+end;
+
 constructor TRgbPalette.CreateFromFile(AFilename: string; AFormat: TPaletteFormat);
 begin
   inherited Create;
@@ -292,8 +309,10 @@ end;
 
 procedure TRgbPalette.SetPaletteData(AData: PRgbColors);
 begin
-  if Assigned(FColors) and (FColorCount > 0) then
+  if Assigned(FColors) and (FColorCount > 0) then begin
     FreeMem(FColors, FColorCount * SizeOf(TRgbColor));
+    FColors := nil;
+  end;
   FColors := AData;
 end;
 
@@ -302,6 +321,21 @@ begin
   if (not Assigned(FColors)) or (AIndex >= FColorCount) then
     exit;
   FColors^[AIndex] := AColor;
+end;
+
+function TRgbPalette.ByteSize: word;
+begin
+  ByteSize := FColorCount * SizeOf(TRgbColor);
+end;
+
+function TRgbPalette.Compression: TAplCompression;
+begin
+  Compression := FCompression;
+end;
+
+function TRgbPalette.CompressionLevel: TCompressionLevel;
+begin
+  CompressionLevel := FCompressionLevel;
 end;
 
 procedure TRgbPalette.WriteLine(AStream: PStream; const ALine: string);
@@ -415,29 +449,23 @@ begin
   end;
 end;
 
-procedure TRgbPalette.LoadPalette(AStream: PStream);
+procedure TRgbPalette.LoadAplPalette(AStream: PStream);
 var
-  count: word;
   compressor: PCompressor;
   dest: PMemoryStream;
   size: word;
 begin
-  count := AStream^.ReadWord;
-  if CheckReRaise(AStream) then
-    exit;
-  size := count * SizeOf(TRgbColor);
-  GetMem(FColors, size);
+  SetCount(AStream^.ReadWord);
   if NilPtr(FColors, ecNotEnoughMemory) then
     exit;
-  FColorCount := count;
   case FCompression of
     acLzw: begin
       compressor := TCompression.GetCompressor(FCompression, FCompressionLevel);
       if NilPtr(compressor, ecNotEnoughMemory) then
         exit;
       dest := New(PMemoryStream, CreateBuffer(FColors, size));
-      compressor^.DecompressStream(AStream, dest, count * SizeOf(TRgbColor));
-      CheckReRaise(dest);
+      dest^.FreeBuffers := false;
+      compressor^.DecompressStream(AStream, dest, size);
       FreeAndNil(compressor);
       FreeAndNil(dest);
     end;
@@ -446,22 +474,21 @@ begin
   end;
 end;
 
-procedure TRgbPalette.SavePalette(AStream: PStream);
+procedure TRgbPalette.SaveAplPalette(AStream: PStream);
 var
   compressor: PCompressor;
   source: PMemoryStream;
   size: word;
 begin
-  AStream^.WriteWord(FColorCount);
-  if CheckReRaise(AStream) then
-    exit;
   size := FColorCount * SizeOf(TRgbColor);
+  AStream^.WriteWord(FColorCount);
   case FCompression of
     acLzw: begin
       compressor := TCompression.GetCompressor(FCompression, FCompressionLevel);
       if NilPtr(compressor, ecNotEnoughMemory) then
         exit;
       source := New(PMemoryStream, CreateBuffer(FColors, size));
+      source^.FreeBuffers := false;
       compressor^.CompressStream(source, AStream, size);
       CheckReRaise(source);
       FreeAndNil(compressor);
@@ -509,16 +536,31 @@ end;
 
 procedure TRgbPalette.LoadFromStream(AStream: PStream);
 begin
-  if Assigned(FColors) and (FColorCount > 0) then
+  if Assigned(FColors) and (FColorCount > 0) then begin
     FreeMem(FColors, FColorCount * SizeOf(TRgbColor));
+    FColors := nil;
+  end;
   FColorCount := 0;
   FColors := nil;
   case FFormat of
-    pfApl: LoadPalette(AStream);
+    pfApl: LoadAplPalette(AStream);
     pfJasc: LoadJascPalette(AStream);
     pfGimp: LoadGimpPalette(AStream);
   end;
   CheckReRaise(AStream);
+end;
+
+procedure TRgbPalette.SetCount(ACount: word);
+begin
+  if Assigned(FColors) then begin
+    FreeMem(FColors, FColorCount * SizeOf(TRgbColor));
+    FColors := nil;
+  end;
+  FColorCount := ACount;
+  GetMem(FColors, SizeOf(TRgbColor) * FColorCount);
+  if NilPtr(FColors, ecNotEnoughMemory) then
+    exit;
+  FillChar(FColors^, SizeOf(TRgbColor) * FColorCount, 0);
 end;
 
 procedure TRgbPalette.SetFormat(AFormat: TPaletteFormat);
@@ -529,7 +571,7 @@ end;
 procedure TRgbPalette.SaveToStream(AStream: PStream);
 begin
   case FFormat of
-    pfApl: SavePalette(AStream);
+    pfApl: SaveAplPalette(AStream);
     pfJasc: SaveJascPalette(AStream);
     pfGimp: SaveGimpPalette(AStream);
   end;

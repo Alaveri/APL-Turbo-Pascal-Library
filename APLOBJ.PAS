@@ -89,6 +89,7 @@ type
     function NilPtr(APtr: pointer; ACode: TExceptionCode): boolean;
     function NilPtrSeverity(APtr: pointer; ACode: TExceptionCode;
       ASeverity: TExceptionSeverity): boolean;
+    function CheckForExceptions(AObject: PStatusObject): boolean;
     destructor Free; virtual;
   end;
 
@@ -342,6 +343,23 @@ begin
   if result then
     ReRaise(AObject);
   CheckReRaise := result;
+end;
+
+function TStatusObject.CheckForExceptions(AObject: PStatusObject): boolean;
+var
+  result: boolean;
+begin
+  result := false;
+  if not Assigned(AObject) then begin
+    Raise(ecNotEnoughMemory);
+    result := true;
+  end
+  else
+  if AObject^.HasException then begin
+    ReRaise(AObject);
+    result := true;
+  end;
+  CheckForExceptions := result;
 end;
 
 function TStatusObject.NilPtr(APtr: pointer; ACode: TExceptionCode): boolean;

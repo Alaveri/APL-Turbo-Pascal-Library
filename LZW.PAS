@@ -453,7 +453,6 @@ begin
     end;
     oldCode := code;
   until false;
-  FlushWriteBuffer;
 end;
 
 end.

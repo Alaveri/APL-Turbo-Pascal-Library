@@ -31,19 +31,13 @@ type
 
   TCompressor = object(TStatusObject)
   private
-    FReadBufferSize: word;
-    FWriteBufferSize: word;
     FSource, FDest: PStream;
     FWriteSize, FReadSize: word;
-    FReadPos, FWritePos: word;
     FReadBitCounter: shortint;
     FWriteBitCounter: shortint;
     FReadBitBuffer: longint;
     FWriteBitBuffer: longint;
-    FReadBuffer, FWriteBuffer: PByte;
-    FReadPtr, FWritePtr: PByte;
     FProgressCounter: longint;
-    procedure SetBufferSize(AReadBufferSize, AWriteBufferSize: word);
   public
     OnProgress: PCompressProgressProc;
     Source, Dest: PStream;
@@ -51,7 +45,6 @@ type
     ReadTotal, WriteTotal: longint;
     AddTotalToStream: boolean;
     CompressionLevel: TCompressionLevel;
-    constructor CreateBufferSize(AReadBufferSize, AWriteBufferSize: word);
     constructor Create;
     function CompressStream(ASource, ADest: PStream; ALength: longint): longint; virtual;
     function CompressFromBuffer(ASource: pointer; ADest: PStream; ALength: word): longint;
@@ -59,7 +52,6 @@ type
       ALength: word): longint;
     function ReadByte: byte;
     function ReadBits(ABitCount: shortint): word;
-    function FlushWriteBuffer: boolean;
     function GetOriginalSize(ASource: PStream): longint; virtual;
     procedure WriteBits(ANum: word; ABitCount: shortint);
     procedure WriteByte(AByte: byte);
@@ -98,26 +90,10 @@ uses
 
 const
   DefaultProgressIncrement = 4096;
-  DefaultBufferSize = 4096;
-
-procedure TCompressor.SetBufferSize(AReadBufferSize, AWriteBufferSize: word);
-begin
-  FReadBufferSize := AReadBufferSize;
-  FWriteBufferSize := AWriteBufferSize;
-  GetMem(FReadBuffer, FReadBufferSize);
-  GetMem(FWriteBuffer, FWriteBufferSize);
-end;
 
 constructor TCompressor.Create;
 begin
   inherited Create;
-  SetBufferSize(DefaultBufferSize, DefaultBufferSize);
-end;
-
-constructor TCompressor.CreateBufferSize(AReadBufferSize, AWriteBufferSize: word);
-begin
-  inherited Create;
-  SetBufferSize(AReadBufferSize, AWriteBufferSize);
 end;
 
 procedure TCompressor.Init;
@@ -128,10 +104,6 @@ begin
   FReadSize := 0;
   ReadTotal := 0;
   WriteTotal := 0;
-  FReadPos := MaxVarSize;
-  FWritePos := 0;
-  FReadPtr := nil;
-  FWritePtr := nil;
   Source := nil;
   Dest := nil;
   CompressionLevel := clHigh;
@@ -139,8 +111,6 @@ begin
   FWriteBitCounter := 0;
   FReadBitBuffer := 0;
   FWriteBitBuffer := 0;
-  FReadBuffer := nil;
-  FWriteBuffer := nil;
   AddTotalToStream := false;
   ProgressIncrement := DefaultProgressIncrement;
 end;
@@ -151,25 +121,9 @@ begin
 end;
 
 procedure TCompressor.WriteByte(AByte: byte);
-var
-  written: longint;
 begin
-  if FWritePos >= FWriteSize then begin
-    written := Dest^.Write(FWriteBuffer, FWritePos);
-    if written = 0 then begin
-      Raise(ecWritePastStreamEnd);
-      exit;
-    end;
-    if CheckReRaise(Dest) then
-      exit;
-    FWritePos := 0;
-    FWritePtr := FWriteBuffer;
-    FWriteSize := written;
-  end;
-  FWritePtr^ := AByte;
+  Dest^.WriteByte(AByte);
   Inc(WriteTotal);
-  Inc(FWritePtr);
-  Inc(FWritePos);
 end;
 
 procedure TCompressor.EndWriteBits;
@@ -188,7 +142,6 @@ begin
     FWriteBitBuffer := 0;
     FWriteBitCounter := 0;
   end;
-  FlushWriteBuffer;
   if Assigned(OnProgress) and (ReadTotal mod ProgressIncrement = 0) then begin
     event.Create;
     event.Max := Source^.Size;
@@ -200,24 +153,11 @@ end;
 
 function TCompressor.ReadByte: byte;
 var
-  bytesRead: longint;
+  current: byte;
 begin
-  if (FReadPos = MaxVarSize) or (FReadPos >= FReadSize) then begin
-    bytesRead := Source^.Read(FReadBuffer, FReadBufferSize);
-    if bytesRead = 0 then begin
-      Raise(ecReadPastStreamEnd);
-      exit;
-    end;
-    if CheckReRaise(Source) then
-      exit;
-    FReadPos := 0;
-    FReadPtr := FReadBuffer;
-    FReadSize := bytesRead;
-  end;
-  ReadByte := FReadPtr^;
+  current := Source^.ReadByte;
   Inc(ReadTotal);
-  Inc(FReadPtr);
-  Inc(FReadPos);
+  ReadByte := current;
 end;
 
 procedure TCompressor.WriteBits(ANum: word; ABitCount: shortint);
@@ -267,57 +207,19 @@ begin
   Inc(FProgressCounter);
 end;
 
-function TCompressor.FlushWriteBuffer: boolean;
-var
-  written: word;
-begin
-  FlushWriteBuffer := true;
-  if Dest^.HasException or HasException or (FWritePos < 1) then begin
-    FlushWriteBuffer := false;
-    exit;
-  end;
-  if FWritePos > 0 then begin
-    written := Dest^.Write(FWriteBuffer, FWritePos);
-    if written = 0 then begin
-      Raise(ecWritePastStreamEnd);
-      FlushWriteBuffer := false;
-      exit;
-    end;
-  end;
-  if Dest^.HasException then begin
-    Raise(Dest^.Exception^.Code);
-    Dest^.ClearException;
-    FlushWriteBuffer := false;
-  end;
-end;
-
 destructor TCompressor.Free;
 begin
-  if Assigned(FReadBuffer) then begin
-    FreeMem(FReadBuffer, FReadBufferSize);
-    FReadBuffer := nil;
-  end;
-  if Assigned(FWriteBuffer) then begin
-    FreeMem(FWriteBuffer, FWriteBufferSize);
-    FWriteBuffer := nil;
-  end;
   inherited Free;
 end;
 
 procedure TCompressor.InitCompression;
 begin
-  FReadPos := MaxVarSize;
-  FWritePos := 0;
   WriteTotal := 0;
   ReadTotal := 0;
-  FWritePtr := FWriteBuffer;
-  FWriteSize := FWriteBufferSize;
-  FReadSize := FReadBufferSize;
   FWriteBitBuffer := 0;
   FReadBitCounter := 0;
   FWriteBitCounter := 0;
   FReadBitBuffer := 0;
-  FReadPtr := FReadBuffer;
   FProgressCounter := 0;
 end;
 
